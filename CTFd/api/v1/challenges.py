@@ -177,6 +177,13 @@ class ChallengeList(Resource):
         all_challenge_ids = {
             c.id for c in Challenges.query.with_entities(Challenges.id).all()
         }
+        email = get_user_email()
+        lms = get_lms_ctfd_data_for_email(email)
+        user_active_tasks = set(
+                                lms.get("active_attempt_task_ids", [])
+                            )
+        attrs = lms.get("attributes", {})
+
         for challenge in chal_q:
             if challenge.requirements:
                 requirements = challenge.requirements.get("prerequisites", [])
@@ -227,17 +234,12 @@ class ChallengeList(Resource):
                                 }
                             )
                         continue
-                    email = get_user_email()
                     allowed = True
                     try:
-                        lms = get_lms_ctfd_data_for_email(email)
                         if only_active:
-                            allowed = challenge.id in set(
-                                lms.get("active_attempt_task_ids", [])
-                            )
+                            allowed = challenge.id in user_active_tasks
                         else:
                             if logic is not None and str(logic).strip() != "":
-                                attrs = lms.get("attributes", {})
                                 allowed = eval_attr_logic(str(logic), attrs)
                     except LMSUnavailable:
                         allowed = False
