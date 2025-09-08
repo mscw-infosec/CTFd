@@ -178,7 +178,12 @@ class ChallengeList(Resource):
             c.id for c in Challenges.query.with_entities(Challenges.id).all()
         }
         email = get_user_email()
-        lms = get_lms_ctfd_data_for_email(email)
+        lms_found = True
+        lms = {}
+        try:
+            lms = get_lms_ctfd_data_for_email(email)
+        except LMSUnavailable:
+            lms_found = False
         user_active_tasks = set(
                                 lms.get("active_attempt_task_ids", [])
                             )
@@ -235,6 +240,8 @@ class ChallengeList(Resource):
                             )
                         continue
                     allowed = True
+                    if not lms_found:
+                        allowed = False
                     try:
                         if only_active:
                             allowed = challenge.id in user_active_tasks
