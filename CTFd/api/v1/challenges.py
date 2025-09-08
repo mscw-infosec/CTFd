@@ -56,7 +56,9 @@ from CTFd.utils.user import (
     get_current_user,
     get_current_user_attrs,
     is_admin,
+    get_user_email,
 )
+from CTFd.utils.lms import get_lms_ctfd_data_for_email, eval_attr_logic, LMSUnavailable
 
 challenges_namespace = Namespace(
     "challenges", description="Endpoint to retrieve Challenges"
@@ -200,6 +202,62 @@ class ChallengeList(Resource):
                         )
                     # Fallthrough to continue
                     continue
+
+            # LMS-based gating for list view (non-admin)
+            if not admin_view:
+                reqs = challenge.requirements or {}
+                only_active = bool(reqs.get("only_while_active_in_lms"))
+                logic = reqs.get("lms_attribute_logic")
+                if only_active or (logic is not None and str(logic).strip() != ""):
+                    anonymize = reqs.get("anonymize")
+                    if not authed():
+                        if anonymize:
+                            response.append(
+                                {
+                                    "id": challenge.id,
+                                    "type": "hidden",
+                                    "name": "???",
+                                    "value": 0,
+                                    "solves": None,
+                                    "solved_by_me": False,
+                                    "category": "???",
+                                    "tags": [],
+                                    "template": "",
+                                    "script": "",
+                                }
+                            )
+                        continue
+                    email = get_user_email()
+                    allowed = True
+                    try:
+                        lms = get_lms_ctfd_data_for_email(email)
+                        if only_active:
+                            allowed = challenge.id in set(
+                                lms.get("active_attempt_task_ids", [])
+                            )
+                        else:
+                            if logic is not None and str(logic).strip() != "":
+                                attrs = lms.get("attributes", {})
+                                allowed = eval_attr_logic(str(logic), attrs)
+                    except LMSUnavailable:
+                        allowed = False
+                    if not allowed:
+                        if anonymize:
+                            response.append(
+                                {
+                                    "id": challenge.id,
+                                    "type": "hidden",
+                                    "name": "???",
+                                    "value": 0,
+                                    "solves": None,
+                                    "solved_by_me": False,
+                                    "category": "???",
+                                    "tags": [],
+                                    "template": "",
+                                    "script": "",
+                                }
+                            )
+                        continue
 
             try:
                 challenge_type = get_chal_class(challenge.type)
@@ -356,6 +414,64 @@ class Challenge(Resource):
                     abort(403)
             else:
                 abort(403)
+
+        # LMS-based gating
+        if not is_admin():
+            reqs = chal.requirements or {}
+            only_active = bool(reqs.get("only_while_active_in_lms"))
+            logic = reqs.get("lms_attribute_logic")
+            if only_active or (logic is not None and str(logic).strip() != ""):
+                if not authed():
+                    # Must be authenticated to evaluate LMS rules
+                    if reqs.get("anonymize"):
+                        return {
+                            "success": True,
+                            "data": {
+                                "id": chal.id,
+                                "type": "hidden",
+                                "name": "???",
+                                "value": 0,
+                                "solves": None,
+                                "solved_by_me": False,
+                                "category": "???",
+                                "tags": [],
+                                "template": "",
+                                "script": "",
+                            },
+                        }
+                    abort(403)
+                email = get_user_email()
+                allowed = True
+                try:
+                    lms = get_lms_ctfd_data_for_email(email)
+                    if only_active:
+                        # Override attributes: access only if active in LMS for this challenge
+                        allowed = chal.id in set(lms.get("active_attempt_task_ids", []))
+                    else:
+                        # Evaluate attribute logic only when override is not enabled
+                        if logic is not None and str(logic).strip() != "":
+                            attrs = lms.get("attributes", {})
+                            allowed = eval_attr_logic(str(logic), attrs)
+                except LMSUnavailable:
+                    allowed = False
+                if not allowed:
+                    if reqs.get("anonymize"):
+                        return {
+                            "success": True,
+                            "data": {
+                                "id": chal.id,
+                                "type": "hidden",
+                                "name": "???",
+                                "value": 0,
+                                "solves": None,
+                                "solved_by_me": False,
+                                "category": "???",
+                                "tags": [],
+                                "template": "",
+                                "script": "",
+                            },
+                        }
+                    abort(403)
 
         tags = [
             tag["value"] for tag in TagSchema("user", many=True).dump(chal.tags).data
@@ -583,6 +699,28 @@ class ChallengeAttempt(Resource):
                 pass
             else:
                 abort(403)
+
+        # LMS-based gating for attempts
+        if not is_admin():
+            reqs = (challenge.requirements or {})
+            only_active = bool(reqs.get("only_while_active_in_lms"))
+            logic = reqs.get("lms_attribute_logic")
+            if only_active or (logic is not None and str(logic).strip() != ""):
+                email = get_user_email()
+                allowed = True
+                try:
+                    lms = get_lms_ctfd_data_for_email(email)
+                    if only_active:
+                        # Override attributes: access only if active in LMS for this challenge
+                        allowed = challenge.id in set(lms.get("active_attempt_task_ids", []))
+                    else:
+                        if logic is not None and str(logic).strip() != "":
+                            attrs = lms.get("attributes", {})
+                            allowed = eval_attr_logic(str(logic), attrs)
+                except LMSUnavailable:
+                    allowed = False
+                if not allowed:
+                    abort(403)
 
         chal_class = get_chal_class(challenge.type)
 

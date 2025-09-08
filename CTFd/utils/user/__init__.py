@@ -133,6 +133,15 @@ def authed():
     return bool(session.get("id", False))
 
 
+def get_user_email():
+    if authed():
+        user: Users | None = get_current_user()
+        if user is not None and user.type:
+            return user.email
+        return None
+    else:
+        return None
+
 def is_admin():
     if authed():
         user = get_current_user_attrs()

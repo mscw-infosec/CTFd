@@ -159,15 +159,16 @@ export default {
     updateRequirements: function () {
       let selectedRequirements = this.selectedRequirements;
 
-      const params = {
-        requirements: {
-          prerequisites: selectedRequirements,
-        },
-      };
-
+      // Preserve any unknown requirement keys (e.g., LMS fields)
+      const mergedReqs = Object.assign({}, this.requirements || {});
+      mergedReqs.prerequisites = selectedRequirements;
       if (this.selectedAnonymize) {
-        params.requirements.anonymize = true;
+        mergedReqs.anonymize = true;
+      } else {
+        delete mergedReqs.anonymize;
       }
+
+      const params = { requirements: mergedReqs };
 
       CTFd.fetch(`/api/v1/challenges/${this.$props.challenge_id}`, {
         method: "PATCH",
