@@ -5,11 +5,15 @@ import os
 import requests
 
 from CTFd.cache import cache
+from CTFd.utils.logging import log
 
 
 class LMSUnavailable(Exception):
     pass
 
+class SafeAttrs(dict):
+    def __missing__(self, key):
+        return None
 
 @cache.memoize(timeout=5)
 def get_lms_ctfd_data_for_email(email: str) -> Dict[str, Any]:
@@ -121,8 +125,9 @@ def eval_attr_logic(expression: str, attributes: Dict[str, Any]) -> bool:
         SafeEvalVisitor(attributes.copy()).visit(tree)
         compiled = compile(tree, filename="<attr-logic>", mode="eval")
         # Evaluate with empty builtins for safety
-        result = eval(compiled, {"__builtins__": {}}, attributes)
+        result = eval(compiled, {"__builtins__": {}}, SafeAttrs(attributes))
         return bool(result)
-    except Exception:
+    except Exception as e:
+        log("owl", "Error evaluating LMS attribute expression: {err}", err=e)
         # On any error, deny by default for safety
         return False

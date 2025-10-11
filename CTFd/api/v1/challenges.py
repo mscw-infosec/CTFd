@@ -404,6 +404,7 @@ class Challenge(Resource):
                 if solve_ids >= prereqs or is_admin():
                     pass
                 else:
+                    # log("owl", "Challenge {chal_id} not shown due to prereq check", chal_id=challenge_id)
                     if anonymize:
                         return {
                             "success": True,
@@ -431,6 +432,7 @@ class Challenge(Resource):
             logic = reqs.get("lms_attribute_logic")
             if only_active or (logic is not None and str(logic).strip() != ""):
                 if not authed():
+                    # log("owl", "Challenge {chal_id} not shown due to user not authed", chal_id=challenge_id)
                     # Must be authenticated to evaluate LMS rules
                     if reqs.get("anonymize"):
                         return {
@@ -461,7 +463,12 @@ class Challenge(Resource):
                         if logic is not None and str(logic).strip() != "":
                             attrs = lms.get("attributes", {})
                             allowed = eval_attr_logic(str(logic), attrs)
-                except LMSUnavailable:
+                            # if not allowed:
+                            #     log("owl", "Challenge {chal_id} not shown due to logic not passed: {logica}",
+                            #         chal_id=challenge_id, logica=str([str(logic), attrs]))
+
+                except LMSUnavailable as lms_err:
+                    log("owl", "Challenge {chal_id} not shown due to lms error: {lms_err}", chal_id=challenge_id, lms_err=lms_err)
                     allowed = False
                 if not allowed:
                     if reqs.get("anonymize"):
